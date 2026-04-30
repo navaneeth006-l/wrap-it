@@ -1,180 +1,183 @@
-// wrap it.cpp : Defines the entry point for the application.
-//
+#include <windows.h>
+#include <wrl.h>
+#include "WebView2.h"
+#include <fstream>
+#include <string>
+#include <psapi.h>
 
-#include "framework.h"
-#include "wrap it.h"
+#pragma comment(lib, "psapi.lib")
 
-#define MAX_LOADSTRING 100
+using namespace Microsoft::WRL;
 
-// Global Variables:
-HINSTANCE hInst;                                // current instance
-WCHAR szTitle[MAX_LOADSTRING];                  // The title bar text
-WCHAR szWindowClass[MAX_LOADSTRING];            // the main window class name
+#define WM_TRAYICON (WM_USER + 1)
 
-// Forward declarations of functions included in this code module:
-ATOM                MyRegisterClass(HINSTANCE hInstance);
-BOOL                InitInstance(HINSTANCE, int);
-LRESULT CALLBACK    WndProc(HWND, UINT, WPARAM, LPARAM);
-INT_PTR CALLBACK    About(HWND, UINT, WPARAM, LPARAM);
+#define TRAY_ICON_ID 1
 
-int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
-                     _In_opt_ HINSTANCE hPrevInstance,
-                     _In_ LPWSTR    lpCmdLine,
-                     _In_ int       nCmdShow)
-{
-    UNREFERENCED_PARAMETER(hPrevInstance);
-    UNREFERENCED_PARAMETER(lpCmdLine);
+HINSTANCE hInst;
+HWND mainWindow;
 
-    // TODO: Place code here.
+ComPtr<ICoreWebView2Controller> webviewController;
+ComPtr<ICoreWebView2> webview;
 
-    // Initialize global strings
-    LoadStringW(hInstance, IDS_APP_TITLE, szTitle, MAX_LOADSTRING);
-    LoadStringW(hInstance, IDC_WRAPIT, szWindowClass, MAX_LOADSTRING);
-    MyRegisterClass(hInstance);
+std::wstring windowTitleGlobal;
 
-    // Perform application initialization:
-    if (!InitInstance (hInstance, nCmdShow))
-    {
-        return FALSE;
-    }
+NOTIFYICONDATA nid = {};
 
-    HACCEL hAccelTable = LoadAccelerators(hInstance, MAKEINTRESOURCE(IDC_WRAPIT));
+LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
+void MinimizeToTray(HWND hWnd);
+void RestoreFromTray(HWND hWnd);
+void TrimMemory();
+int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLine, int nCmdShow) {
+	SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+	hInst = hInstance;
+	const wchar_t CLASS_NAME[] = L"AnyWrapClass";
 
-    MSG msg;
+	WNDCLASSEXW wcex = {};
+	wcex.cbSize = sizeof(WNDCLASSEX);
+	wcex.style = CS_HREDRAW | CS_VREDRAW;
+	wcex.lpfnWndProc = WndProc;
+	wcex.hInstance = hInstance;
+	wcex.hCursor = LoadCursor(nullptr, IDC_ARROW);
+	wcex.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+	wcex.lpszClassName = CLASS_NAME;
+	wcex.hIcon = LoadIcon(hInstance, IDI_APPLICATION);
+	wcex.hIconSm = LoadIcon(wcex.hInstance, IDI_APPLICATION);
 
-    // Main message loop:
-    while (GetMessage(&msg, nullptr, 0, 0))
-    {
-        if (!TranslateAccelerator(msg.hwnd, hAccelTable, &msg))
-        {
-            TranslateMessage(&msg);
-            DispatchMessage(&msg);
-        }
-    }
+	RegisterClassExW(&wcex);
 
-    return (int) msg.wParam;
+
+	std::wstring windowTitle = L"Generic Wrapper";
+	std::wstring targetUrl = L"https://google.com";
+	std::wstring darkModeStr = L"false";
+	bool enableDarkMode = false;
+	std::wifstream configFile("config.txt");
+	if (configFile.is_open()) {
+		std::getline(configFile, windowTitle);
+		std::getline(configFile, targetUrl);
+		std::getline(configFile, darkModeStr);
+		configFile.close();
+	}
+	windowTitleGlobal = windowTitle;
+
+	if (darkModeStr.find(L"true") != std::wstring::npos || darkModeStr.find(L"1") != std::wstring::npos) {
+		enableDarkMode = true;
+	}
+
+	int screenWidth = GetSystemMetrics(SM_CXSCREEN);
+	int screenHeight = GetSystemMetrics(SM_CYSCREEN);
+
+	int appWidth = (screenWidth * 8) / 10;
+	int appHeight = (screenHeight * 8) / 10;
+
+	int appX = (screenWidth - appWidth) / 2;
+	int appY = (screenHeight - appHeight) / 2;
+	mainWindow = CreateWindowExW(
+		0, CLASS_NAME, windowTitle.c_str(),
+		WS_OVERLAPPEDWINDOW,
+		appX, appY,
+		appWidth, appHeight,
+		nullptr, nullptr, hInstance, nullptr
+	);
+
+	if (!mainWindow) return FALSE;
+
+	ShowWindow(mainWindow, nCmdShow);
+	UpdateWindow(mainWindow);
+
+	nid.cbSize = sizeof(NOTIFYICONDATA);
+	nid.hWnd = mainWindow;
+	nid.uID = TRAY_ICON_ID;
+	nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
+	nid.uCallbackMessage = WM_TRAYICON;
+	nid.hIcon = LoadIcon(hInstance, IDI_APPLICATION);
+	lstrcpyn(nid.szTip, windowTitle.c_str(), sizeof(nid.szTip) / sizeof(TRAY_ICON_ID));
+
+	CreateCoreWebView2EnvironmentWithOptions(nullptr, nullptr, nullptr,
+		Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
+			[hWnd = mainWindow, targetUrl, enableDarkMode](HRESULT result, ICoreWebView2Environment* env) -> HRESULT {
+
+				env->CreateCoreWebView2Controller(hWnd, Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
+					[hWnd, targetUrl, enableDarkMode](HRESULT result, ICoreWebView2Controller* controller) -> HRESULT {
+						if (controller != nullptr) {
+							webviewController = controller;
+							webviewController->get_CoreWebView2(&webview);
+
+							RECT bounds;
+							GetClientRect(hWnd, &bounds);
+							webviewController->put_Bounds(bounds);
+
+
+							if (enableDarkMode) {
+								std::wstring js_inject = L"document.addEventListener('DOMContentLoaded', function() {"
+									L"  var css = 'html { filter: invert(100%) hue-rotate(180deg); } img, video { filter: invert(100%) hue-rotate(180deg); }';"
+									L"  var style = document.createElement('style');"
+									L"  document.head.appendChild(style);"
+									L"  style.type = 'text/css';"
+									L"  style.appendChild(document.createTextNode(css));"
+									L"});";
+								webview->AddScriptToExecuteOnDocumentCreated(js_inject.c_str(), nullptr);
+							}
+							webview->Navigate(targetUrl.c_str());
+						}
+						return S_OK;
+					}).Get());
+				return S_OK;
+			}).Get());
+
+	MSG msg;
+	while (GetMessage(&msg, nullptr, 0, 0)) {
+		TranslateMessage(&msg);
+		DispatchMessage(&msg);
+	}
+	return (int)msg.wParam;
+}
+LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
+	switch (message) {
+	case WM_SIZE:
+		if (webviewController != nullptr) {
+			RECT bounds;
+			GetClientRect(hWnd, &bounds);
+			webviewController->put_Bounds(bounds);
+		}
+		break;
+	case WM_TRAYICON:
+		if (lParam == WM_LBUTTONDBLCLK) {
+			RestoreFromTray(hWnd);
+		}
+		else if (lParam == WM_RBUTTONUP) {
+			RestoreFromTray(hWnd);
+		}
+		break;
+	case WM_SYSCOMMAND:
+		if ((wParam & 0xFFF0) == SC_MINIMIZE) {
+			MinimizeToTray(hWnd);
+			return 0;
+		}
+		return DefWindowProc(hWnd, message, wParam, lParam);
+	case WM_DESTROY:
+		Shell_NotifyIcon(NIM_DELETE, &nid);
+		PostQuitMessage(0);
+		break;
+	default:
+		return DefWindowProc(hWnd, message, wParam, lParam);
+	}
+	return 0;
 }
 
-
-
-//
-//  FUNCTION: MyRegisterClass()
-//
-//  PURPOSE: Registers the window class.
-//
-ATOM MyRegisterClass(HINSTANCE hInstance)
-{
-    WNDCLASSEXW wcex;
-
-    wcex.cbSize = sizeof(WNDCLASSEX);
-
-    wcex.style          = CS_HREDRAW | CS_VREDRAW;
-    wcex.lpfnWndProc    = WndProc;
-    wcex.cbClsExtra     = 0;
-    wcex.cbWndExtra     = 0;
-    wcex.hInstance      = hInstance;
-    wcex.hIcon          = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_WRAPIT));
-    wcex.hCursor        = LoadCursor(nullptr, IDC_ARROW);
-    wcex.hbrBackground  = (HBRUSH)(COLOR_WINDOW+1);
-    wcex.lpszMenuName   = MAKEINTRESOURCEW(IDC_WRAPIT);
-    wcex.lpszClassName  = szWindowClass;
-    wcex.hIconSm        = LoadIcon(wcex.hInstance, MAKEINTRESOURCE(IDI_SMALL));
-
-    return RegisterClassExW(&wcex);
+void TrimMemory() {
+	if (EmptyWorkingSet(GetCurrentProcess())) {
+		OutputDebugString(L"AnyWrap: Memory trimmed successfully.\n");
+	}
 }
 
-//
-//   FUNCTION: InitInstance(HINSTANCE, int)
-//
-//   PURPOSE: Saves instance handle and creates main window
-//
-//   COMMENTS:
-//
-//        In this function, we save the instance handle in a global variable and
-//        create and display the main program window.
-//
-BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
-{
-   hInst = hInstance; // Store instance handle in our global variable
-
-   HWND hWnd = CreateWindowW(szWindowClass, szTitle, WS_OVERLAPPEDWINDOW,
-      CW_USEDEFAULT, 0, CW_USEDEFAULT, 0, nullptr, nullptr, hInstance, nullptr);
-
-   if (!hWnd)
-   {
-      return FALSE;
-   }
-
-   ShowWindow(hWnd, nCmdShow);
-   UpdateWindow(hWnd);
-
-   return TRUE;
+void MinimizeToTray(HWND hWnd) {
+	Shell_NotifyIcon(NIM_ADD, &nid);
+	ShowWindow(hWnd, SW_HIDE);
+	TrimMemory();
 }
 
-//
-//  FUNCTION: WndProc(HWND, UINT, WPARAM, LPARAM)
-//
-//  PURPOSE: Processes messages for the main window.
-//
-//  WM_COMMAND  - process the application menu
-//  WM_PAINT    - Paint the main window
-//  WM_DESTROY  - post a quit message and return
-//
-//
-LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
-{
-    switch (message)
-    {
-    case WM_COMMAND:
-        {
-            int wmId = LOWORD(wParam);
-            // Parse the menu selections:
-            switch (wmId)
-            {
-            case IDM_ABOUT:
-                DialogBox(hInst, MAKEINTRESOURCE(IDD_ABOUTBOX), hWnd, About);
-                break;
-            case IDM_EXIT:
-                DestroyWindow(hWnd);
-                break;
-            default:
-                return DefWindowProc(hWnd, message, wParam, lParam);
-            }
-        }
-        break;
-    case WM_PAINT:
-        {
-            PAINTSTRUCT ps;
-            HDC hdc = BeginPaint(hWnd, &ps);
-            // TODO: Add any drawing code that uses hdc here...
-            EndPaint(hWnd, &ps);
-        }
-        break;
-    case WM_DESTROY:
-        PostQuitMessage(0);
-        break;
-    default:
-        return DefWindowProc(hWnd, message, wParam, lParam);
-    }
-    return 0;
-}
-
-// Message handler for about box.
-INT_PTR CALLBACK About(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
-{
-    UNREFERENCED_PARAMETER(lParam);
-    switch (message)
-    {
-    case WM_INITDIALOG:
-        return (INT_PTR)TRUE;
-
-    case WM_COMMAND:
-        if (LOWORD(wParam) == IDOK || LOWORD(wParam) == IDCANCEL)
-        {
-            EndDialog(hDlg, LOWORD(wParam));
-            return (INT_PTR)TRUE;
-        }
-        break;
-    }
-    return (INT_PTR)FALSE;
+void RestoreFromTray(HWND hWnd) {
+	ShowWindow(hWnd, SW_SHOW);
+	ShowWindow(hWnd, SW_RESTORE);
+	Shell_NotifyIcon(NIM_DELETE, &nid);
 }
