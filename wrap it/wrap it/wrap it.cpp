@@ -4,6 +4,7 @@
 #include <fstream>
 #include <string>
 #include <psapi.h>
+#include "Resource.h"
 
 #pragma comment(lib, "psapi.lib")
 
@@ -40,8 +41,8 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmd
 	wcex.hCursor = LoadCursor(nullptr, IDC_ARROW);
 	wcex.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
 	wcex.lpszClassName = CLASS_NAME;
-	wcex.hIcon = LoadIcon(hInstance, IDI_APPLICATION);
-	wcex.hIconSm = LoadIcon(wcex.hInstance, IDI_APPLICATION);
+	wcex.hIcon = LoadIcon(hInst, MAKEINTRESOURCE(IDI_ICON1));
+	wcex.hIconSm = LoadIcon(wcex.hInstance, MAKEINTRESOURCE(IDI_ICON1));
 
 	RegisterClassExW(&wcex);
 
@@ -89,7 +90,7 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmd
 	nid.uID = TRAY_ICON_ID;
 	nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
 	nid.uCallbackMessage = WM_TRAYICON;
-	nid.hIcon = LoadIcon(hInstance, IDI_APPLICATION);
+	nid.hIcon = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_ICON1));
 	lstrcpyn(nid.szTip, windowTitle.c_str(), sizeof(nid.szTip) / sizeof(TRAY_ICON_ID));
 
 	CreateCoreWebView2EnvironmentWithOptions(nullptr, nullptr, nullptr,
