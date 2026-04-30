@@ -129,16 +129,19 @@
   <ItemGroup>
     <ClInclude Include="framework.h" />
     <ClInclude Include="Resource.h" />
+    <ClInclude Include="resource1.h" />
     <ClInclude Include="targetver.h" />
     <ClInclude Include="wrap it.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="icon.cpp" />
     <ClCompile Include="wrap it.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="wrap it.rc" />
   </ItemGroup>
   <ItemGroup>
+    <Image Include="..\..\..\..\..\Pictures\wrapit\favicon.ico" />
     <Image Include="small.ico" />
     <Image Include="wrap it.ico" />
   </ItemGroup>

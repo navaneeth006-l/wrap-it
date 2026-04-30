@@ -27,10 +27,16 @@
     <ClInclude Include="wrap it.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="resource1.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="wrap it.cpp">
       <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="icon.cpp">
+      <Filter>Resource Files</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -43,6 +49,9 @@
       <Filter>Resource Files</Filter>
     </Image>
     <Image Include="wrap it.ico">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="..\..\..\..\..\Pictures\wrapit\favicon.ico">
       <Filter>Resource Files</Filter>
     </Image>
   </ItemGroup>
