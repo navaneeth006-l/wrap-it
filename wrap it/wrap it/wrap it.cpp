@@ -14,6 +14,8 @@ using namespace Microsoft::WRL;
 
 #define TRAY_ICON_ID 1
 
+#define ID_TRAY_EXIT 2001
+
 HINSTANCE hInst;
 HWND mainWindow;
 
@@ -92,6 +94,7 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmd
 	nid.uCallbackMessage = WM_TRAYICON;
 	nid.hIcon = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_ICON1));
 	lstrcpyn(nid.szTip, windowTitle.c_str(), sizeof(nid.szTip) / sizeof(TRAY_ICON_ID));
+	wcscpy_s(nid.szTip, ARRAYSIZE(nid.szTip), windowTitle.c_str());
 
 	CreateCoreWebView2EnvironmentWithOptions(nullptr, nullptr, nullptr,
 		Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
@@ -146,11 +149,29 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 			RestoreFromTray(hWnd);
 		}
 		else if (lParam == WM_RBUTTONUP) {
-			RestoreFromTray(hWnd);
+			POINT pt;
+			GetCursorPos(&pt);
+			HMENU hMenu = CreatePopupMenu();
+			std::wstring quitText = L"Quit " + windowTitleGlobal;
+			InsertMenu(hMenu, 0, MF_BYPOSITION | MF_STRING, ID_TRAY_EXIT, quitText.c_str());
+
+			SetForegroundWindow(hWnd);
+
+			TrackPopupMenu(hMenu, TPM_BOTTOMALIGN | TPM_LEFTALIGN, pt.x, pt.y, 0, hWnd, NULL);
+			DestroyMenu(hMenu);
+
+		}
+		break;
+
+	case WM_COMMAND:
+		if (LOWORD(wParam) == ID_TRAY_EXIT) {
+			
+			Shell_NotifyIcon(NIM_DELETE, &nid);
+			PostQuitMessage(0);
 		}
 		break;
 	case WM_SYSCOMMAND:
-		if ((wParam & 0xFFF0) == SC_MINIMIZE) {
+		if ((wParam & 0xFFF0) == SC_CLOSE) {
 			MinimizeToTray(hWnd);
 			return 0;
 		}
