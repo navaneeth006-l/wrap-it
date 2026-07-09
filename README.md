@@ -29,19 +29,25 @@ To change what website the app loads, you must open the `config.txt` file in Not
 * **Line 1: The App Title** (This will appear on the taskbar and system tray hover).
 * **Line 2: The Target URL** (Must include `https://`).
 * **Line 3: Dark Mode Toggle** (Type `true` to force dark mode, or `false` to leave the website normal).
+* **Line 4: Aggressive Memory Saver (Type `true` to save memory aggressively. Recommended to keep disabled as the impact is minimal).
+* **Line 5: Quit On Close (Type `true` to close the app without minimizing to system tray).
 
 **Example `config.txt` for WhatsApp:**
 ```text
-WhatsApp Lite
-[https://web.whatsapp.com](https://web.whatsapp.com)
-true
+name = WhatsApp Lite
+link = https://web.whatsapp.com
+darkmode = true
+aggressivememory = false
+quitonclose = true
 ```
 
 **Example `config.txt` for Discord:**
 ```text
-Discord
-[https://discord.com/app](https://discord.com/app)
-false
+name = Discord
+link = https://discord.com/app
+darkmode = false
+aggressivememory = false
+quitonclose = true
 ```
 
 Once you save the `config.txt`, simply double-click the `.exe` and enjoy your new lightweight app! You can rename the `.exe` file to whatever you want.
