@@ -29,8 +29,8 @@ To change what website the app loads, you must open the `config.txt` file in Not
 * **Line 1: The App Title** (This will appear on the taskbar and system tray hover).
 * **Line 2: The Target URL** (Must include `https://`).
 * **Line 3: Dark Mode Toggle** (Type `true` to force dark mode, or `false` to leave the website normal).
-* **Line 4: Aggressive Memory Saver (Type `true` to save memory aggressively. Recommended to keep disabled as the impact is minimal).
-* **Line 5: Quit On Close (Type `true` to close the app without minimizing to system tray).
+* **Line 4: Aggressive Memory Saver** (Type `true` to save memory aggressively. Recommended to keep disabled as the impact is minimal).
+* **Line 5: Quit On Close** (Type `true` to close the app without minimizing to system tray).
 
 **Example `config.txt` for WhatsApp:**
 ```text
