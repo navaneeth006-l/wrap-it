@@ -14,6 +14,7 @@ using namespace Microsoft::WRL;
 #define WM_TRAYICON (WM_USER + 1)
 #define TRAY_ICON_ID 1
 #define ID_TRAY_EXIT 2001
+#define WM_WAKEUP (WM_USER + 2)
 
 HINSTANCE hInst;
 HWND mainWindow;
@@ -23,6 +24,7 @@ ComPtr<ICoreWebView2> webview;
 
 std::wstring windowTitleGlobal;
 bool aggressiveMemorySave = false; 
+bool quitOnClose = false;
 NOTIFYICONDATA nid = {};
 
 LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
@@ -34,6 +36,85 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmd
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     hInst = hInstance;
     const wchar_t CLASS_NAME[] = L"AnyWrapClass";
+
+    
+    std::string windowTitleStr = "Generic Wrapper";
+    std::string targetUrlStr = "https://google.com";
+    std::string darkModeStr = "false";
+    //std::string memoryToggleStr = "false";
+    //std::string quitOnCloseStr = "false";
+    bool enableDarkMode = false;
+
+        
+        std::ifstream configFile("config.txt");
+        if (configFile.is_open()) {
+            std::string line;
+            while (std::getline(configFile, line)) {
+               
+                size_t delimiterPos = line.find('=');
+                if (delimiterPos != std::string::npos) {
+                   
+                    std::string key = line.substr(0, delimiterPos);
+                    std::string value = line.substr(delimiterPos + 1);
+
+                    
+                    auto trim = [](std::string& str) {
+                        size_t first = str.find_first_not_of(" \t\r\n\"");
+                        if (std::string::npos == first) { str.clear(); return; }
+                        size_t last = str.find_last_not_of(" \t\r\n\"");
+                        str = str.substr(first, (last - first + 1));
+                        };
+
+                    trim(key);
+                    trim(value);
+
+                    
+                    for (auto& c : key) c = tolower(c);
+
+                    
+                    if (key == "name") {
+                        windowTitleStr = value;
+                    }
+                    else if (key == "link") {
+                        targetUrlStr = value;
+                    }
+                    else {
+                        
+                        std::string lowerVal = value;
+                        for (auto& c : lowerVal) c = tolower(c);
+
+                        if (key == "darkmode" && lowerVal == "true") enableDarkMode = true;
+                        else if (key == "aggressivememory" && lowerVal == "true") aggressiveMemorySave = true;
+                        else if (key == "quitonclose" && lowerVal == "true") quitOnClose = true;
+                    }
+                }
+            }
+            configFile.close();
+        }
+
+    
+    std::wstring windowTitle(windowTitleStr.begin(), windowTitleStr.end());
+    std::wstring targetUrl(targetUrlStr.begin(), targetUrlStr.end());
+    windowTitleGlobal = windowTitle;
+    
+
+    if (darkModeStr.find("true") != std::string::npos || darkModeStr.find("1") != std::string::npos) {
+        enableDarkMode = true;
+    }
+
+    std::wstring mutexName = L"WrapIt_Mutex_" + windowTitle;
+    HANDLE hMutex = CreateMutexW(NULL, TRUE, mutexName.c_str());
+
+    if (GetLastError() == ERROR_ALREADY_EXISTS) {
+        
+        HWND existingApp = FindWindowW(CLASS_NAME, windowTitle.c_str());
+        if (existingApp) {
+            
+            PostMessage(existingApp, WM_WAKEUP, 0, 0);
+        }
+        
+        return 0;
+    }
 
     WNDCLASSEXW wcex = {};
     wcex.cbSize = sizeof(WNDCLASSEX);
@@ -47,40 +128,6 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmd
     wcex.hIconSm = LoadIcon(wcex.hInstance, MAKEINTRESOURCE(IDI_ICON1));
 
     RegisterClassExW(&wcex);
-
-    
-    std::string windowTitleStr = "Generic Wrapper";
-    std::string targetUrlStr = "https://google.com";
-    std::string darkModeStr = "false";
-    std::string memoryToggleStr = "false";
-    bool enableDarkMode = false;
-
-    
-    std::ifstream configFile("config.txt");
-    if (configFile.is_open()) {
-        std::getline(configFile, windowTitleStr);
-        std::getline(configFile, targetUrlStr);
-        std::getline(configFile, darkModeStr);
-
-        
-        if (std::getline(configFile, memoryToggleStr)) {
-            memoryToggleStr.erase(memoryToggleStr.find_last_not_of(" \n\r\t") + 1);
-            if (memoryToggleStr == "true") {
-                aggressiveMemorySave = true;
-            }
-        }
-        configFile.close();
-    }
-
-    
-    std::wstring windowTitle(windowTitleStr.begin(), windowTitleStr.end());
-    std::wstring targetUrl(targetUrlStr.begin(), targetUrlStr.end());
-    windowTitleGlobal = windowTitle;
-
-    if (darkModeStr.find("true") != std::string::npos || darkModeStr.find("1") != std::string::npos) {
-        enableDarkMode = true;
-    }
-
     
     int screenWidth = GetSystemMetrics(SM_CXSCREEN);
     int screenHeight = GetSystemMetrics(SM_CYSCREEN);
@@ -174,6 +221,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
             webviewController->put_Bounds(bounds);
         }
         break;
+    case WM_WAKEUP:
+        RestoreFromTray(hWnd);
+        SetForegroundWindow(hWnd);
+        break;
     case WM_TRAYICON:
         if (lParam == WM_LBUTTONDBLCLK) {
             RestoreFromTray(hWnd);
@@ -199,11 +250,15 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
         break;
     case WM_SYSCOMMAND:
         if ((wParam & 0xFFF0) == SC_CLOSE) {
-            MinimizeToTray(hWnd);
-
-            if (aggressiveMemorySave) {
-                Sleep(100);
-                TrimMemory();
+            if (quitOnClose) {
+                DestroyWindow(hWnd);
+            }
+            else {
+                MinimizeToTray(hWnd);
+                if (aggressiveMemorySave) {
+                    Sleep(100);
+                    TrimMemory();
+                }
             }
             return 0;
         }
