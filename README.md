@@ -24,13 +24,14 @@ Because Wrap-It is a portable application, there is no installer.
 ### ⚙️ How to configure your app (The `config.txt` file)
 To change what website the app loads, you must open the `config.txt` file in Notepad and edit it. 
 
-**The file MUST have exactly 3 lines of text.** Do not add extra spaces, and do not leave blank lines at the top.
+**The file MUST have exactly 6 lines of text.** Do not add extra spaces, and do not leave blank lines at the top.
 
 * **Line 1: The App Title** (This will appear on the taskbar and system tray hover).
 * **Line 2: The Target URL** (Must include `https://`).
 * **Line 3: Dark Mode Toggle** (Type `true` to force dark mode, or `false` to leave the website normal).
 * **Line 4: Aggressive Memory Saver** (Type `true` to save memory aggressively. Recommended to keep disabled as the impact is minimal).
 * **Line 5: Quit On Close** (Type `true` to close the app without minimizing to system tray).
+* **Line 6: Open Link in Browser** (Type `true` to open links in your default broswer instead of webview).
 
 **Example `config.txt` for WhatsApp:**
 ```text
@@ -39,6 +40,7 @@ link = https://web.whatsapp.com
 darkmode = true
 aggressivememory = false
 quitonclose = true
+openlinksinbrowser = true
 ```
 
 **Example `config.txt` for Discord:**
@@ -48,6 +50,7 @@ link = https://discord.com/app
 darkmode = false
 aggressivememory = false
 quitonclose = true
+openlinksinbrowser = true
 ```
 
 Once you save the `config.txt`, simply double-click the `.exe` and enjoy your new lightweight app! You can rename the `.exe` file to whatever you want.
