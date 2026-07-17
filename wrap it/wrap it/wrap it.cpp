@@ -25,6 +25,7 @@ ComPtr<ICoreWebView2> webview;
 std::wstring windowTitleGlobal;
 bool aggressiveMemorySave = false; 
 bool quitOnClose = false;
+bool openLinksInBrowserGlobal = false;
 NOTIFYICONDATA nid = {};
 
 LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
@@ -86,6 +87,7 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmd
                         if (key == "darkmode" && lowerVal == "true") enableDarkMode = true;
                         else if (key == "aggressivememory" && lowerVal == "true") aggressiveMemorySave = true;
                         else if (key == "quitonclose" && lowerVal == "true") quitOnClose = true;
+                        else if (key == "openlinksinbrowser" && lowerVal == "true") openLinksInBrowserGlobal = true;
                     }
                 }
             }
@@ -98,9 +100,9 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmd
     windowTitleGlobal = windowTitle;
     
 
-    if (darkModeStr.find("true") != std::string::npos || darkModeStr.find("1") != std::string::npos) {
-        enableDarkMode = true;
-    }
+    //if (darkModeStr.find("true") != std::string::npos || darkModeStr.find("1") != std::string::npos) {
+    //    enableDarkMode = true;
+    //}
 
     std::wstring mutexName = L"WrapIt_Mutex_" + windowTitle;
     HANDLE hMutex = CreateMutexW(NULL, TRUE, mutexName.c_str());
@@ -186,6 +188,21 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmd
                             RECT bounds;
                             GetClientRect(hWnd, &bounds);
                             webviewController->put_Bounds(bounds);
+
+                            webview->add_NewWindowRequested(
+                                Callback<ICoreWebView2NewWindowRequestedEventHandler>(
+                                    [](ICoreWebView2* sender, ICoreWebView2NewWindowRequestedEventArgs* args) -> HRESULT {
+                                        if (openLinksInBrowserGlobal) {
+                                            LPWSTR uri;
+                                            args->get_Uri(&uri);
+                                            ShellExecuteW(nullptr, L"open", uri, nullptr, nullptr, SW_SHOWNORMAL);
+                                            args->put_Handled(TRUE);
+                                            CoTaskMemFree(uri);
+                                        }
+                                        return S_OK;
+                                    }
+                                ).Get(), nullptr
+                            );
 
                             if (enableDarkMode) {
                                 std::wstring js_inject = L"document.addEventListener('DOMContentLoaded', function() {"
