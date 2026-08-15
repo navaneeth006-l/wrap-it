@@ -37,7 +37,7 @@ bool openLinksInBrowserGlobal = false;
 NOTIFYICONDATA nid = {};
 bool autoUpdateGlobal = true;
 
-const double CURRENT_VERSION = 1;
+const double CURRENT_VERSION = 3.0;
 
 std::wstring GITHUB_VERSION_URL = L"https://raw.githubusercontent.com/navaneeth006-l/wrap-it/refs/heads/main/wrap-it/version.txt";
 std::wstring GITHUB_EXE_URL = L"https://github.com/navaneeth006-l/wrap-it/releases/latest/download/wrap-it.exe";
