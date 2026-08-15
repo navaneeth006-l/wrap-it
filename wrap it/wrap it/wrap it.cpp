@@ -7,8 +7,11 @@
 #include <psapi.h>
 #include "Resource.h"
 #include <TlHelp32.h>
+#include <urlmon.h>
+#include <thread>
 
 #pragma comment(lib, "psapi.lib")
+#pragma comment(lib, "urlmon.lib")
 using namespace Microsoft::WRL;
 
 #define WM_TRAYICON (WM_USER + 1)
@@ -28,15 +31,35 @@ bool quitOnClose = false;
 bool openLinksInBrowserGlobal = false;
 NOTIFYICONDATA nid = {};
 
+const double CURRENT_VERSION = 2.1;
+
+std::wstring GITHUB_VERSION_URL = L"https://raw.githubusercontent.com/navaneeth006-l/wrap-it/main/version.txt";
+std::wstring GITHUB_EXE_URL = L"https://github.com/navaneeth006-l/wrap-it/releases/latest/download/wrap-it.exe";
+
 LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
 void MinimizeToTray(HWND hWnd);
 void RestoreFromTray(HWND hWnd);
 void TrimMemory();
+void RunAutoUpdater(std::wstring basePath, std::wstring exePathRaw);
 
-int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLine, int nCmdShow) {
+int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPWSTR lpCmdLine, _In_ int nCmdShow) {
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     hInst = hInstance;
     const wchar_t CLASS_NAME[] = L"AnyWrapClass";
+
+    wchar_t exePathRaw[MAX_PATH];
+    GetModuleFileNameW(NULL, exePathRaw, MAX_PATH);
+    std::wstring basePath(exePathRaw);
+
+    size_t lastSlash = basePath.find_last_of(L"\\/");
+    if (lastSlash != std::wstring::npos) {
+        basePath = basePath.substr(0, lastSlash + 1); // Leaves the trailing slash (e.g., "C:\App\")
+    }
+
+    std::wstring oldExePath = basePath + L"wrap it.old.exe";
+    DeleteFileW(oldExePath.c_str());
+
+    std::wstring configPath = basePath + L"config.txt";
 
     
     std::string windowTitleStr = "Generic Wrapper";
@@ -47,7 +70,7 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmd
     bool enableDarkMode = false;
 
         
-        std::ifstream configFile("config.txt");
+    std::ifstream configFile(configPath);
         if (configFile.is_open()) {
             std::string line;
             while (std::getline(configFile, line)) {
@@ -160,6 +183,8 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmd
     nid.hIcon = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_ICON1));
     wcscpy_s(nid.szTip, ARRAYSIZE(nid.szTip), windowTitle.c_str()); 
 
+    std::thread updaterThread(RunAutoUpdater, basePath, std::wstring(exePathRaw));
+    updaterThread.detach();
     
     auto options = Microsoft::WRL::Make<CoreWebView2EnvironmentOptions>();
 
@@ -229,6 +254,52 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmd
     return (int)msg.wParam;
 }
 
+void RunAutoUpdater(std::wstring basePath, std::wstring exePathRaw) {
+    std::wstring tempVersionFile = basePath + L"temp_version.txt";
+
+    HRESULT hr = URLDownloadToFileW(NULL, GITHUB_VERSION_URL.c_str(), tempVersionFile.c_str(), 0, NULL);
+
+    if (hr == S_OK) {
+        std::ifstream vFile(tempVersionFile);
+        std::string vStr;
+
+        
+        if (std::getline(vFile, vStr)) {
+            try {
+                double onlineVersion = std::stod(vStr);
+
+                
+                if (onlineVersion > CURRENT_VERSION) {
+
+                    
+                    std::wstring newExePath = basePath + L"update.exe";
+                    HRESULT hr2 = URLDownloadToFileW(NULL, GITHUB_EXE_URL.c_str(), newExePath.c_str(), 0, NULL);
+
+                    if (hr2 == S_OK) {
+                        std::wstring oldExePath = basePath + L"wrap it.old.exe";
+
+                        
+                        _wrename(exePathRaw.c_str(), oldExePath.c_str());
+                        _wrename(newExePath.c_str(), exePathRaw.c_str());
+
+                        
+                        ShellExecuteW(NULL, L"open", exePathRaw.c_str(), NULL, NULL, SW_SHOWNORMAL);
+
+                        
+                        PostMessage(mainWindow, WM_CLOSE, 0, 0);
+                    }
+                }
+            }
+            catch (...) {
+                
+            }
+        }
+        vFile.close();
+        DeleteFileW(tempVersionFile.c_str()); 
+    }
+}
+
+
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
     switch (message) {
     case WM_SIZE:
@@ -280,6 +351,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
             return 0;
         }
         return DefWindowProc(hWnd, message, wParam, lParam);
+    case WM_CLOSE:
+        Shell_NotifyIcon(NIM_DELETE, &nid);
+        PostQuitMessage(0);
+        break;
     case WM_DESTROY:
         Shell_NotifyIcon(NIM_DELETE, &nid);
         PostQuitMessage(0);
@@ -328,7 +403,7 @@ void MinimizeToTray(HWND hWnd) {
     Shell_NotifyIcon(NIM_ADD, &nid);
     ShowWindow(hWnd, SW_HIDE);
     if (webviewController != nullptr) {
-        webviewController->put_IsVisible(FALSE);
+        webviewController->put_IsVisible(FALSE);    
     }
 }
 
