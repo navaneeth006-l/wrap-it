@@ -4,8 +4,17 @@ Wrap-It is a hyper-optimized, custom-built C++ browser engine wrapper that allow
 
 Instead of downloading heavy Electron apps for Discord, WhatsApp, Spotify, or Notion, you can use one single 2MB engine to wrap them all. Because it uses the native Windows WebView2 runtime and direct Win32 memory management, it uses a fraction of the RAM of standard desktop apps.
 
+## ⚠️ MIGRATION NOTICE FOR EXISTING USERS ⚠️
+In this update, the app now uses a universal profile folder. If you are updating from an older version and want to keep your existing logins and sessions:
+1. Open your app folder.
+2. Find the folder named something like "YourAppName.exe.WebView2".
+3. Rename that folder exactly to: ProfileData
+If you do this before opening the new version, you will not have to log in to your apps again!
+
 ## 🚀 Core Features
 * **Universal Wrapping:** Turn *any* URL into an app just by changing a text file.
+* **Portable Renaming:** You can rename the .exe to whatever you want (e.g., Discord.exe, Notion.exe) and the engine will seamlessly adapt without breaking your cache.
+* **Silent Auto-Updater:** The app will check GitHub in the background for new engine updates. It uses sleek Windows native notifications to let you know an update is installing, then seamlessly reboots itself.
 * **Aggressive Memory Trimming:** Intercepts the Windows "Close" button to send the app to the System Tray. When hidden, it uses the Windows PSAPI (`EmptyWorkingSet`) to forcibly flush unused RAM, dropping background memory to ~5MB-10MB.
 * **Native C++ Dark Mode:** Capable of injecting custom CSS to hardware-invert website colors *before* the DOM renders, forcing a dark mode on sites that don't natively support it.
 * **Isolated Caching:** Run multiple instances (e.g., multiple Discord accounts) simultaneously. Each app folder creates its own isolated browser cache, preventing login conflicts.
@@ -17,7 +26,7 @@ Instead of downloading heavy Electron apps for Discord, WhatsApp, Spotify, or No
 
 Because Wrap-It is a portable application, there is no installer. 
 
-1. Download the latest `Wrap-It.zip` from the **Releases** tab.
+1. Download the latest `Wrap-It.7z` from the **Releases** tab.
 2. Extract the folder anywhere on your PC (e.g., to your Desktop).
 3. Inside the folder, you will see three files: `wrap it.exe`, `WebView2Loader.dll`, and `config.txt`.
 
@@ -32,6 +41,7 @@ To change what website the app loads, you must open the `config.txt` file in Not
 * **Line 4: Aggressive Memory Saver** (Type `true` to save memory aggressively. Recommended to keep disabled as the impact is minimal).
 * **Line 5: Quit On Close** (Type `true` to close the app without minimizing to system tray).
 * **Line 6: Open Link in Browser** (Type `true` to open links in your default broswer instead of webview).
+* **Line 7: Auto Update** (Type true to allow silent background updates, or false to only receive clickable notifications when a manual update is ready).
 
 **Example `config.txt` for WhatsApp:**
 ```text
@@ -41,6 +51,7 @@ darkmode = true
 aggressivememory = false
 quitonclose = true
 openlinksinbrowser = true
+autoupdate = true
 ```
 
 **Example `config.txt` for Discord:**
@@ -51,6 +62,7 @@ darkmode = false
 aggressivememory = false
 quitonclose = true
 openlinksinbrowser = true
+autoupdate = false
 ```
 
 Once you save the `config.txt`, simply double-click the `.exe` and enjoy your new lightweight app! You can rename the `.exe` file to whatever you want.
