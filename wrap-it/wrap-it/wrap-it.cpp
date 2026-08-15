@@ -37,7 +37,7 @@ bool openLinksInBrowserGlobal = false;
 NOTIFYICONDATA nid = {};
 bool autoUpdateGlobal = true;
 
-const double CURRENT_VERSION = 3.1;
+const double CURRENT_VERSION = 3.2;
 
 std::wstring GITHUB_VERSION_URL = L"https://raw.githubusercontent.com/navaneeth006-l/wrap-it/refs/heads/main/wrap-it/version.txt";
 std::wstring GITHUB_EXE_URL = L"https://github.com/navaneeth006-l/wrap-it/releases/latest/download/wrap-it.exe";
@@ -396,7 +396,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
             DestroyMenu(hMenu);
         }
         else if (LOWORD(lParam) == NIN_BALLOONUSERCLICK) {
-            ShellExecuteW(NULL, L"open", L"https://github.com/navaneeth006-l/wrap-it/releases/latest", NULL, NULL, SW_SHOWNORMAL);
+            autoUpdateGlobal = true;
+            std::wstring basePath = exePathGlobal.substr(0, exePathGlobal.find_last_of(L"\\/") + 1);
+            std::thread manualUpdater(RunAutoUpdater, basePath, exePathGlobal);
+            manualUpdater.detach();
         }
         break;
 
@@ -407,7 +410,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
         }
 
         else if (LOWORD(wParam) == ID_TRAY_UPDATE) {
-            ShellExecuteW(NULL, L"open", L"https://github.com/navaneeth006-l/wrap-it/releases/latest", NULL, NULL, SW_SHOWNORMAL);
+            autoUpdateGlobal = true;
+            std::wstring basePath = exePathGlobal.substr(0, exePathGlobal.find_last_of(L"\\/") + 1);
+            std::thread manualUpdater(RunAutoUpdater, basePath, exePathGlobal);
+            manualUpdater.detach();
         }
         break;
     case WM_SYSCOMMAND:
