@@ -17,23 +17,29 @@ using namespace Microsoft::WRL;
 #define WM_TRAYICON (WM_USER + 1)
 #define TRAY_ICON_ID 1
 #define ID_TRAY_EXIT 2001
-#define WM_WAKEUP (WM_USER + 2)
+#define ID_TRAY_UPDATE 2002
+#define WM_WAKEUP (WM_USER + 10)
+#define WM_REBOOT (WM_USER + 11)
+#define WM_UPDATE_NOTIFY (WM_USER + 12)
+#define WM_UPDATE_MANUAL (WM_USER + 13)
 
 HINSTANCE hInst;
 HWND mainWindow;
 ComPtr<ICoreWebView2Controller> webviewController;
 ComPtr<ICoreWebView2> webview;
 
-
+HANDLE hMutexGlobal = NULL;
+std::wstring exePathGlobal;
 std::wstring windowTitleGlobal;
 bool aggressiveMemorySave = false; 
 bool quitOnClose = false;
 bool openLinksInBrowserGlobal = false;
 NOTIFYICONDATA nid = {};
+bool autoUpdateGlobal = true;
 
-const double CURRENT_VERSION = 3.1;
+const double CURRENT_VERSION = 1;
 
-std::wstring GITHUB_VERSION_URL = L"https://raw.githubusercontent.com/navaneeth006-l/wrap-it/main/version.txt";
+std::wstring GITHUB_VERSION_URL = L"https://raw.githubusercontent.com/navaneeth006-l/wrap-it/refs/heads/main/wrap-it/version.txt";
 std::wstring GITHUB_EXE_URL = L"https://github.com/navaneeth006-l/wrap-it/releases/latest/download/wrap-it.exe";
 
 LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
@@ -49,6 +55,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance
 
     wchar_t exePathRaw[MAX_PATH];
     GetModuleFileNameW(NULL, exePathRaw, MAX_PATH);
+    exePathGlobal = exePathRaw;
     std::wstring basePath(exePathRaw);
 
     size_t lastSlash = basePath.find_last_of(L"\\/");
@@ -56,9 +63,9 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance
         basePath = basePath.substr(0, lastSlash + 1); // Leaves the trailing slash (e.g., "C:\App\")
     }
 
-    std::wstring oldExePath = basePath + L"wrap it.old.exe";
+    std::wstring oldExePath = std::wstring(exePathRaw) + L".old";
     DeleteFileW(oldExePath.c_str());
-
+        
     std::wstring configPath = basePath + L"config.txt";
 
     
@@ -111,6 +118,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance
                         else if (key == "aggressivememory" && lowerVal == "true") aggressiveMemorySave = true;
                         else if (key == "quitonclose" && lowerVal == "true") quitOnClose = true;
                         else if (key == "openlinksinbrowser" && lowerVal == "true") openLinksInBrowserGlobal = true;
+                        else if (key == "autoupdate" && lowerVal == "false") autoUpdateGlobal = false;
                     }
                 }
             }
@@ -128,7 +136,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance
     //}
 
     std::wstring mutexName = L"WrapIt_Mutex_" + windowTitle;
-    HANDLE hMutex = CreateMutexW(NULL, TRUE, mutexName.c_str());
+    hMutexGlobal = CreateMutexW(NULL, TRUE, mutexName.c_str());
 
     if (GetLastError() == ERROR_ALREADY_EXISTS) {
         
@@ -183,6 +191,10 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance
     nid.hIcon = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_ICON1));
     wcscpy_s(nid.szTip, ARRAYSIZE(nid.szTip), windowTitle.c_str()); 
 
+    nid.uVersion = NOTIFYICON_VERSION_4;
+    Shell_NotifyIcon(NIM_ADD, &nid);
+    Shell_NotifyIcon(NIM_SETVERSION, &nid);
+
     std::thread updaterThread(RunAutoUpdater, basePath, std::wstring(exePathRaw));
     updaterThread.detach();
     
@@ -200,7 +212,9 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance
 
     options->put_AdditionalBrowserArguments(args.c_str());
 
-    CreateCoreWebView2EnvironmentWithOptions(nullptr, nullptr, options.Get(),
+    std::wstring userDataFolder = basePath + L"ProfileData";
+
+    CreateCoreWebView2EnvironmentWithOptions(nullptr, userDataFolder.c_str(), options.Get(),
         Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
             [hWnd = mainWindow, targetUrl, enableDarkMode](HRESULT result, ICoreWebView2Environment* env) -> HRESULT {
 
@@ -254,54 +268,60 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance
     return (int)msg.wParam;
 }
 
+// --- PROFESSIONAL AUTO-UPDATER ---
 void RunAutoUpdater(std::wstring basePath, std::wstring exePathRaw) {
     std::wstring tempVersionFile = basePath + L"temp_version.txt";
 
-    HRESULT hr = URLDownloadToFileW(NULL, GITHUB_VERSION_URL.c_str(), tempVersionFile.c_str(), 0, NULL);
+    // 1. Download the version.txt from GitHub silently
+    if (URLDownloadToFileW(NULL, GITHUB_VERSION_URL.c_str(), tempVersionFile.c_str(), 0, NULL) == S_OK) {
 
-    if (hr == S_OK) {
         std::ifstream vFile(tempVersionFile);
         std::string vStr;
 
-        
+        // 2. Read the number inside
         if (std::getline(vFile, vStr)) {
             try {
                 double onlineVersion = std::stod(vStr);
 
-                
+                // 3. Compare it to our current version
                 if (onlineVersion > CURRENT_VERSION) {
 
-                    
-                    std::wstring newExePath = basePath + L"update.exe";
-                    HRESULT hr2 = URLDownloadToFileW(NULL, GITHUB_EXE_URL.c_str(), newExePath.c_str(), 0, NULL);
+                    if (autoUpdateGlobal) {
 
-                    if (hr2 == S_OK) {
-                        std::wstring oldExePath = basePath + L"wrap it.old.exe";
+                        // 👇 NEW: Fire the radio signal to the Main Thread to show the sleek Windows Toast!
+                        PostMessage(mainWindow, WM_UPDATE_NOTIFY, 0, 0);
 
-                        
-                        if (_wrename(exePathRaw.c_str(), oldExePath.c_str()) == 0) {
+                        // 4. Start the heavy EXE download
+                        std::wstring newExePath = basePath + L"update.exe";
+                        if (URLDownloadToFileW(NULL, GITHUB_EXE_URL.c_str(), newExePath.c_str(), 0, NULL) == S_OK) {
 
-                            
-                            if (_wrename(newExePath.c_str(), exePathRaw.c_str()) == 0) {
+                            std::wstring oldExePath = std::wstring(exePathRaw) + L".old";
 
-                                
-                                ShellExecuteW(NULL, L"open", exePathRaw.c_str(), NULL, NULL, SW_SHOWNORMAL);
+                            // THE RENAME TRICK 
+                            if (_wrename(exePathRaw.c_str(), oldExePath.c_str()) == 0) {
+                                if (_wrename(newExePath.c_str(), exePathRaw.c_str()) == 0) {
 
-                              
-                                PostMessage(mainWindow, WM_CLOSE, 0, 0);
+                                    // 5. Handoff to Main Thread to reboot
+                                    PostMessage(mainWindow, WM_REBOOT, 0, 0);
+
+                                }
                             }
                         }
+                    }
+                    else {
+                        PostMessage(mainWindow, WM_UPDATE_MANUAL, 0, 0);
                     }
                 }
             }
             catch (...) {
-                
+                // Silently fail if text parsing breaks so the user is never bothered
             }
         }
         vFile.close();
-        DeleteFileW(tempVersionFile.c_str()); 
+        DeleteFileW(tempVersionFile.c_str());
     }
 }
+// ---------------------------------
 
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
@@ -317,20 +337,66 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
         RestoreFromTray(hWnd);
         SetForegroundWindow(hWnd);
         break;
+    case WM_REBOOT:
+        // 1. Manually drop the lock so the new app can boot freely
+        if (hMutexGlobal) {
+            ReleaseMutex(hMutexGlobal);
+            CloseHandle(hMutexGlobal);
+        }
+
+        // 2. Boot the new app
+        ShellExecuteW(NULL, L"open", exePathGlobal.c_str(), NULL, NULL, SW_SHOWNORMAL);
+
+        // 3. Commit suicide
+        Shell_NotifyIcon(NIM_DELETE, &nid);
+        PostQuitMessage(0);
+        break;
+    case WM_UPDATE_NOTIFY:
+        nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP | NIF_INFO;
+        wcscpy_s(nid.szInfoTitle, ARRAYSIZE(nid.szInfoTitle), L"Update Found");
+        {
+            std::wstring infoText = windowTitleGlobal + L" is downloading a new update in the background. It will restart automatically!";
+            wcscpy_s(nid.szInfo, ARRAYSIZE(nid.szInfo), infoText.c_str());
+        }
+        nid.dwInfoFlags = NIIF_INFO | NIIF_RESPECT_QUIET_TIME;
+        Shell_NotifyIcon(NIM_MODIFY, &nid);
+        break;
+    case WM_UPDATE_MANUAL:
+        nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP | NIF_INFO;
+        wcscpy_s(nid.szInfoTitle, ARRAYSIZE(nid.szInfoTitle), L"New Version Available");
+
+        {
+            std::wstring infoText = windowTitleGlobal + L" has an update! Check GitHub to download the latest version.";
+            wcscpy_s(nid.szInfo, ARRAYSIZE(nid.szInfo), infoText.c_str());
+        }
+
+        nid.dwInfoFlags = NIIF_INFO | NIIF_RESPECT_QUIET_TIME;
+        Shell_NotifyIcon(NIM_MODIFY, &nid);
+        break;
     case WM_TRAYICON:
-        if (lParam == WM_LBUTTONDBLCLK) {
+        if (LOWORD(lParam) == WM_LBUTTONDBLCLK) {
             RestoreFromTray(hWnd);
         }
-        else if (lParam == WM_RBUTTONUP) {
+        // 👇 FIX: Version 4 also prefers sending WM_CONTEXTMENU instead of WM_RBUTTONUP!
+        else if (LOWORD(lParam) == WM_RBUTTONUP || LOWORD(lParam) == WM_CONTEXTMENU) {
             POINT pt;
             GetCursorPos(&pt);
             HMENU hMenu = CreatePopupMenu();
+
+            InsertMenu(hMenu, 0, MF_BYPOSITION | MF_STRING, ID_TRAY_UPDATE, L"Check for Updates (GitHub)");
+
             std::wstring quitText = L"Quit " + windowTitleGlobal;
-            InsertMenu(hMenu, 0, MF_BYPOSITION | MF_STRING, ID_TRAY_EXIT, quitText.c_str());
+            InsertMenu(hMenu, 1, MF_BYPOSITION | MF_STRING, ID_TRAY_EXIT, quitText.c_str());
 
             SetForegroundWindow(hWnd);
             TrackPopupMenu(hMenu, TPM_BOTTOMALIGN | TPM_LEFTALIGN, pt.x, pt.y, 0, hWnd, NULL);
+
+            // Standard Win32 bugfix: Post a dummy message so the menu actually closes if they click away
+            PostMessage(hWnd, WM_NULL, 0, 0);
             DestroyMenu(hMenu);
+        }
+        else if (LOWORD(lParam) == NIN_BALLOONUSERCLICK) {
+            ShellExecuteW(NULL, L"open", L"https://github.com/navaneeth006-l/wrap-it/releases/latest", NULL, NULL, SW_SHOWNORMAL);
         }
         break;
 
@@ -338,6 +404,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
         if (LOWORD(wParam) == ID_TRAY_EXIT) {
             Shell_NotifyIcon(NIM_DELETE, &nid);
             PostQuitMessage(0);
+        }
+
+        else if (LOWORD(wParam) == ID_TRAY_UPDATE) {
+            ShellExecuteW(NULL, L"open", L"https://github.com/navaneeth006-l/wrap-it/releases/latest", NULL, NULL, SW_SHOWNORMAL);
         }
         break;
     case WM_SYSCOMMAND:
@@ -404,7 +474,7 @@ void TrimMemory() {
 }
 
 void MinimizeToTray(HWND hWnd) {
-    Shell_NotifyIcon(NIM_ADD, &nid);
+    
     ShowWindow(hWnd, SW_HIDE);
     if (webviewController != nullptr) {
         webviewController->put_IsVisible(FALSE);    
@@ -414,7 +484,7 @@ void MinimizeToTray(HWND hWnd) {
 void RestoreFromTray(HWND hWnd) {
     ShowWindow(hWnd, SW_SHOW);
     ShowWindow(hWnd, SW_RESTORE);
-    Shell_NotifyIcon(NIM_DELETE, &nid);
+    
     if (webviewController != nullptr) {
         webviewController->put_IsVisible(TRUE);
     }
