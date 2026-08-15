@@ -22,6 +22,7 @@ using namespace Microsoft::WRL;
 #define WM_REBOOT (WM_USER + 11)
 #define WM_UPDATE_NOTIFY (WM_USER + 12)
 #define WM_UPDATE_MANUAL (WM_USER + 13)
+#define WM_UPDATE_LATEST (WM_USER + 14)
 
 HINSTANCE hInst;
 HWND mainWindow;
@@ -37,7 +38,7 @@ bool openLinksInBrowserGlobal = false;
 NOTIFYICONDATA nid = {};
 bool autoUpdateGlobal = true;
 
-const double CURRENT_VERSION = 3.2;
+const double CURRENT_VERSION = 3.21;
 
 std::wstring GITHUB_VERSION_URL = L"https://raw.githubusercontent.com/navaneeth006-l/wrap-it/refs/heads/main/wrap-it/version.txt";
 std::wstring GITHUB_EXE_URL = L"https://github.com/navaneeth006-l/wrap-it/releases/latest/download/wrap-it.exe";
@@ -46,7 +47,7 @@ LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
 void MinimizeToTray(HWND hWnd);
 void RestoreFromTray(HWND hWnd);
 void TrimMemory();
-void RunAutoUpdater(std::wstring basePath, std::wstring exePathRaw);
+void RunAutoUpdater(std::wstring basePath, std::wstring exePathRaw, bool isManualCheck);
 
 int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPWSTR lpCmdLine, _In_ int nCmdShow) {
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
@@ -195,7 +196,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance
     Shell_NotifyIcon(NIM_ADD, &nid);
     Shell_NotifyIcon(NIM_SETVERSION, &nid);
 
-    std::thread updaterThread(RunAutoUpdater, basePath, std::wstring(exePathRaw));
+    std::thread updaterThread(RunAutoUpdater, basePath, std::wstring(exePathRaw), false);
     updaterThread.detach();
     
     auto options = Microsoft::WRL::Make<CoreWebView2EnvironmentOptions>();
@@ -269,7 +270,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance
 }
 
 // --- PROFESSIONAL AUTO-UPDATER ---
-void RunAutoUpdater(std::wstring basePath, std::wstring exePathRaw) {
+void RunAutoUpdater(std::wstring basePath, std::wstring exePathRaw, bool isManualCheck) {
     std::wstring tempVersionFile = basePath + L"temp_version.txt";
 
     // 1. Download the version.txt from GitHub silently
@@ -311,6 +312,9 @@ void RunAutoUpdater(std::wstring basePath, std::wstring exePathRaw) {
                     else {
                         PostMessage(mainWindow, WM_UPDATE_MANUAL, 0, 0);
                     }
+                }
+                else if (isManualCheck) {
+                    PostMessage(mainWindow, WM_UPDATE_LATEST, 0, 0);
                 }
             }
             catch (...) {
@@ -373,6 +377,18 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
         nid.dwInfoFlags = NIIF_INFO | NIIF_RESPECT_QUIET_TIME;
         Shell_NotifyIcon(NIM_MODIFY, &nid);
         break;
+    case WM_UPDATE_LATEST:
+        nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP | NIF_INFO;
+        wcscpy_s(nid.szInfoTitle, ARRAYSIZE(nid.szInfoTitle), L"Up to Date");
+
+        {
+            std::wstring infoText = windowTitleGlobal + L" is already running the latest version.";
+            wcscpy_s(nid.szInfo, ARRAYSIZE(nid.szInfo), infoText.c_str());
+        }
+
+        nid.dwInfoFlags = NIIF_INFO | NIIF_RESPECT_QUIET_TIME;
+        Shell_NotifyIcon(NIM_MODIFY, &nid);
+        break;
     case WM_TRAYICON:
         if (LOWORD(lParam) == WM_LBUTTONDBLCLK) {
             RestoreFromTray(hWnd);
@@ -398,7 +414,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
         else if (LOWORD(lParam) == NIN_BALLOONUSERCLICK) {
             autoUpdateGlobal = true;
             std::wstring basePath = exePathGlobal.substr(0, exePathGlobal.find_last_of(L"\\/") + 1);
-            std::thread manualUpdater(RunAutoUpdater, basePath, exePathGlobal);
+            std::thread manualUpdater(RunAutoUpdater, basePath, exePathGlobal, true);
             manualUpdater.detach();
         }
         break;
@@ -412,7 +428,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
         else if (LOWORD(wParam) == ID_TRAY_UPDATE) {
             autoUpdateGlobal = true;
             std::wstring basePath = exePathGlobal.substr(0, exePathGlobal.find_last_of(L"\\/") + 1);
-            std::thread manualUpdater(RunAutoUpdater, basePath, exePathGlobal);
+            std::thread manualUpdater(RunAutoUpdater, basePath, exePathGlobal, true);
             manualUpdater.detach();
         }
         break;
@@ -439,6 +455,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
         Shell_NotifyIcon(NIM_DELETE, &nid);
         PostQuitMessage(0);
         break;
+
     default:
         return DefWindowProc(hWnd, message, wParam, lParam);
     }
