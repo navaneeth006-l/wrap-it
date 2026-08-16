@@ -143,10 +143,14 @@
   </ItemGroup>
   <ItemGroup>
     <Image Include="..\..\..\..\..\Pictures\wrapit\favicon.ico" />
+    <Image Include="..\..\..\..\Users\Navaneeth\Pictures\wrapit\favicon.ico" />
     <Image Include="small.ico" />
     <Image Include="wrap-it.ico" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="..\..\..\..\users\navaneeth\downloads\html6.htm">
+      <DeploymentContent>true</DeploymentContent>
+    </None>
     <None Include="packages.config" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

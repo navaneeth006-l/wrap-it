@@ -54,8 +54,12 @@
     <Image Include="..\..\..\..\..\Pictures\wrapit\favicon.ico">
       <Filter>Resource Files</Filter>
     </Image>
+    <Image Include="..\..\..\..\Users\Navaneeth\Pictures\wrapit\favicon.ico">
+      <Filter>Resource Files</Filter>
+    </Image>
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
+    <None Include="..\..\..\..\users\navaneeth\downloads\html6.htm" />
   </ItemGroup>
 </Project>
