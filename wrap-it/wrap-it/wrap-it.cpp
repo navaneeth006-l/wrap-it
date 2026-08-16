@@ -9,10 +9,12 @@
 #include <TlHelp32.h>
 #include <urlmon.h>
 #include <thread>
-#include <algorithm> // Required for string cleaning
+#include <shobjidl_core.h>
 
 #pragma comment(lib, "psapi.lib")
 #pragma comment(lib, "urlmon.lib")
+#pragma comment(lib, "shell32.lib")
+
 using namespace Microsoft::WRL;
 
 #define WM_TRAYICON (WM_USER + 1)
@@ -44,6 +46,9 @@ bool autoUpdateGlobal = true;
 
 NOTIFYICONDATA nid = {};
 const double CURRENT_VERSION = 3.3;
+
+// 👇 Restored to track when you get new messages!
+int lastUnreadCountGlobal = 0;
 
 std::wstring GITHUB_VERSION_URL = L"https://raw.githubusercontent.com/navaneeth006-l/wrap-it/refs/heads/main/wrap-it/version.txt";
 std::wstring GITHUB_EXE_URL = L"https://github.com/navaneeth006-l/wrap-it/releases/latest/download/wrap-it.exe";
@@ -85,6 +90,7 @@ std::wstring GetEmbeddedHTML(int resourceID) {
 
 int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPWSTR lpCmdLine, _In_ int nCmdShow) {
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+    SetCurrentProcessExplicitAppUserModelID(L"WrapIt.Native.App");
     hInst = hInstance;
     const wchar_t CLASS_NAME[] = L"AnyWrapClass";
 
@@ -292,7 +298,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance
                                 ).Get(), nullptr
                             );
 
-                            // 👇 FIX 1: RESTORED THE SILENT UNREAD BADGE (With the NIF_MESSAGE fix!)
+                            // 👇 THE BULLETPROOF TITLE SCRAPER
                             webview->add_DocumentTitleChanged(
                                 Callback<ICoreWebView2DocumentTitleChangedEventHandler>(
                                     [](ICoreWebView2* sender, IUnknown* args) -> HRESULT {
@@ -318,11 +324,23 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance
                                             }
 
                                             wcscpy_s(nid.szTip, ARRAYSIZE(nid.szTip), tooltipText.substr(0, 127).c_str());
-
-                                            // KEEP NIF_MESSAGE SO THE TRAY MENU NEVER BREAKS
                                             nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
-                                            nid.szInfo[0] = L'\0'; // Clear old popups
-                                            nid.szInfoTitle[0] = L'\0';
+
+                                            // If the count goes up, flash taskbar and show generic generic notification
+                                            if (currentCount > lastUnreadCountGlobal) {
+                                                nid.uFlags |= NIF_INFO;
+                                                wcscpy_s(nid.szInfoTitle, ARRAYSIZE(nid.szInfoTitle), windowTitleGlobal.c_str());
+
+                                                std::wstring infoText = L"You have " + std::to_wstring(currentCount - lastUnreadCountGlobal) + L" new unread message(s).";
+                                                wcscpy_s(nid.szInfo, ARRAYSIZE(nid.szInfo), infoText.c_str());
+
+                                                nid.dwInfoFlags = NIIF_INFO | NIIF_RESPECT_QUIET_TIME;
+
+                                                FLASHWINFO fi = { sizeof(FLASHWINFO), mainWindow, FLASHW_ALL | FLASHW_TIMERNOFG, 3, 0 };
+                                                FlashWindowEx(&fi);
+                                            }
+
+                                            lastUnreadCountGlobal = currentCount;
                                             Shell_NotifyIcon(NIM_MODIFY, &nid);
 
                                             CoTaskMemFree(title);
@@ -347,7 +365,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance
                                 ).Get(), nullptr
                             );
 
-                            // 👇 FIX 2: BULLETPROOF JSON PARSING
+                            // 👇 THE STREAMLINED SETTINGS SAVER
                             webview->add_WebMessageReceived(
                                 Callback<ICoreWebView2WebMessageReceivedEventHandler>(
                                     [userDataFolder](ICoreWebView2* sender, ICoreWebView2WebMessageReceivedEventArgs* args) -> HRESULT {
@@ -355,55 +373,13 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance
                                         args->TryGetWebMessageAsString(&message);
 
                                         if (message != nullptr) {
-                                            std::wstring wsMessage(message);
+                                            CreateDirectoryW(userDataFolder.c_str(), NULL);
+                                            std::wstring jsonPath = userDataFolder + L"\\settings.json";
+                                            std::wofstream outFile(jsonPath);
+                                            outFile << message;
+                                            outFile.close();
 
-                                            // IS THIS A HIJACKED NOTIFICATION?
-                                            if (wsMessage.find(L"NativeToast") != std::wstring::npos) {
-
-                                                auto extract = [&](std::wstring key) {
-                                                    size_t keyPos = wsMessage.find(key);
-                                                    if (keyPos != std::wstring::npos) {
-                                                        size_t colonPos = wsMessage.find(L":", keyPos);
-                                                        if (colonPos != std::wstring::npos) {
-                                                            size_t valStart = wsMessage.find_first_not_of(L" \":\\", colonPos + 1);
-                                                            if (valStart != std::wstring::npos) {
-                                                                size_t valEnd = wsMessage.find_first_of(L"\"\\", valStart);
-                                                                if (valEnd != std::wstring::npos) {
-                                                                    return wsMessage.substr(valStart, valEnd - valStart);
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                    return std::wstring(L"");
-                                                    };
-
-                                                std::wstring nTitle = extract(L"title");
-                                                std::wstring nBody = extract(L"body");
-
-                                                nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP | NIF_INFO;
-                                                wcscpy_s(nid.szInfoTitle, ARRAYSIZE(nid.szInfoTitle), nTitle.substr(0, 63).c_str());
-                                                wcscpy_s(nid.szInfo, ARRAYSIZE(nid.szInfo), nBody.substr(0, 255).c_str());
-                                                nid.dwInfoFlags = NIIF_INFO | NIIF_RESPECT_QUIET_TIME;
-                                                Shell_NotifyIcon(NIM_MODIFY, &nid);
-
-                                                FLASHWINFO fi;
-                                                fi.cbSize = sizeof(FLASHWINFO);
-                                                fi.hwnd = mainWindow;
-                                                fi.dwFlags = FLASHW_ALL | FLASHW_TIMERNOFG;
-                                                fi.uCount = 3;
-                                                fi.dwTimeout = 0;
-                                                FlashWindowEx(&fi);
-                                            }
-                                            // IS THIS THE SETTINGS MENU SAVING?
-                                            else if (wsMessage.find(L"link") != std::wstring::npos) {
-                                                CreateDirectoryW(userDataFolder.c_str(), NULL);
-                                                std::wstring jsonPath = userDataFolder + L"\\settings.json";
-                                                std::wofstream outFile(jsonPath);
-                                                outFile << message;
-                                                outFile.close();
-
-                                                PostMessage(mainWindow, WM_REBOOT, 0, 0);
-                                            }
+                                            PostMessage(mainWindow, WM_REBOOT, 0, 0);
                                             CoTaskMemFree(message);
                                         }
                                         return S_OK;
@@ -421,39 +397,6 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance
                                     L"});";
                                 webview->AddScriptToExecuteOnDocumentCreated(js_inject.c_str(), nullptr);
                             }
-
-                            // 👇 FIX 3: ADDED SERVICE WORKER SUPPORT FOR WHATSAPP/DISCORD
-                            // 👇 FIX 3: ADDED JSON.STRINGIFY BACK SO C++ CAN ACTUALLY READ IT
-                            std::wstring js_notification_hijack = LR"(
-                                const OriginalNotification = window.Notification;
-                                function CustomNotification(title, options) {
-                                    const safeTitle = title ? title.replace(/["\\]/g, '') : 'New Message';
-                                    const safeBody = (options && options.body) ? options.body.replace(/["\\]/g, '') : '';
-                                    
-                                    // Must be JSON.stringify or C++ will silently reject it!
-                                    window.chrome.webview.postMessage(JSON.stringify({ type: 'NativeToast', title: safeTitle, body: safeBody }));
-                                    
-                                    return new OriginalNotification(title, options);
-                                }
-                                CustomNotification.permission = 'granted';
-                                CustomNotification.requestPermission = () => Promise.resolve('granted');
-                                window.Notification = CustomNotification;
-
-                                if (window.ServiceWorkerRegistration) {
-                                    const origShow = window.ServiceWorkerRegistration.prototype.showNotification;
-                                    window.ServiceWorkerRegistration.prototype.showNotification = function(title, options) {
-                                        const safeTitle = title ? title.replace(/["\\]/g, '') : 'New Message';
-                                        const safeBody = (options && options.body) ? options.body.replace(/["\\]/g, '') : '';
-                                        
-                                        // Must be JSON.stringify here too!
-                                        window.chrome.webview.postMessage(JSON.stringify({ type: 'NativeToast', title: safeTitle, body: safeBody }));
-                                        
-                                        return origShow.call(this, title, options);
-                                    };
-                                }
-                            )";
-                            webview->AddScriptToExecuteOnDocumentCreated(js_notification_hijack.c_str(), nullptr);
-                            webview->AddScriptToExecuteOnDocumentCreated(js_notification_hijack.c_str(), nullptr);
 
                             if (targetUrlGlobal.empty()) {
                                 std::wstring embeddedHtml = GetEmbeddedHTML(IDR_HTML6);
